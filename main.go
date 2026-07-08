@@ -149,6 +149,7 @@ type Options struct {
 	Constructor    bool
 	Verbose        bool
 	NoSigaltstack  bool
+	DirMaps     []string
 	StackArgs   map[string]StackArgInfo
 }
 
@@ -246,6 +247,7 @@ func GenInit(file string, opts Options) {
 		"constructor": opts.Constructor,
 		"verbose":         opts.Verbose,
 		"no_sigaltstack":  opts.NoSigaltstack,
+		"dir_maps":        opts.DirMaps,
 	}, nil)
 
 	w.Close()
@@ -280,6 +282,7 @@ func main() {
 	noConstructor := flag.Bool("no-constructor", false, "disable constructor for automatic initialization")
 	verbose := flag.Bool("verbose", false, "enable verbose logging")
 	noSigaltstack := flag.Bool("no-sigaltstack", false, "disable automatic sigaltstack initialization")
+	dirMaps := flag.String("dir-maps", "", "comma-separated list of directory mappings (e.g. /=/)")
 
 	flag.Parse()
 
@@ -358,6 +361,11 @@ func main() {
 	}
 	f.Close()
 
+	var dirMapsSlice []string
+	if *dirMaps != "" {
+		dirMapsSlice = strings.Split(*dirMaps, ",")
+	}
+
 	opts := Options{
 		Input:       input,
 		Syms:        syms,
@@ -370,6 +378,7 @@ func main() {
 		Constructor: !*noConstructor,
 		Verbose:       *verbose,
 		NoSigaltstack: *noSigaltstack,
+		DirMaps:     dirMapsSlice,
 		StackArgs:   stackArgs,
 	}
 

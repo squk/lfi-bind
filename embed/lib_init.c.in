@@ -203,11 +203,23 @@ getfilepath(const char *path)
 
 {{end}}
 
-{{if .dynamic}}
 static char cwd[FILENAME_MAX];
 
+{{if .dynamic}}
 static const char *all[] = {
     "/=/",
+    NULL,
+};
+{{end}}
+
+{{if .dir_maps}}
+static const char *dir_maps[] = {
+{{- range $map := .dir_maps}}
+    "{{$map}}",
+{{- end}}
+{{- if .dynamic}}
+    "/=/",
+{{- end}}
     NULL,
 };
 {{end}}
@@ -215,13 +227,11 @@ static const char *all[] = {
 static bool
 lfi_init(void)
 {
-{{if .dynamic}}
     char *p = getcwd(cwd, sizeof(cwd));
     if (p != cwd) {
         LOG("error: failed to read cwd");
         return false;
     }
-{{end}}
 
     // Create engine if it does not exist.
     bool ok = lfi_linux_lib_init((struct LFIOptions) {
@@ -238,7 +248,10 @@ lfi_init(void)
 {{end}}
     }, (struct LFILinuxOptions) {
         .stacksize = 2UL * 1024 * 1024,
-{{if .dynamic}}
+{{if .dir_maps}}
+        .dir_maps = dir_maps,
+        .wd = cwd,
+{{else if .dynamic}}
         // TODO: don't allow complete file system access if dynamic...
         .dir_maps = all,
         .wd = cwd,
