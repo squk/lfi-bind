@@ -203,7 +203,9 @@ getfilepath(const char *path)
 
 {{end}}
 
+{{if or .dir_maps .dynamic}}
 static char cwd[FILENAME_MAX];
+{{end}}
 
 {{if .dynamic}}
 static const char *all[] = {
@@ -227,11 +229,13 @@ static const char *dir_maps[] = {
 static bool
 lfi_init(void)
 {
+{{if or .dir_maps .dynamic}}
     char *p = getcwd(cwd, sizeof(cwd));
     if (p != cwd) {
         LOG("error: failed to read cwd");
         return false;
     }
+{{end}}
 
     // Create engine if it does not exist.
     bool ok = lfi_linux_lib_init((struct LFIOptions) {
