@@ -295,6 +295,7 @@ bool
         return false;
     }
     bool ok = lfi_proc_load_file(proc, prog_path);
+    free((void *) prog_path);
 {{end}}
 
     if (!ok) {
