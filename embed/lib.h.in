@@ -16,7 +16,7 @@ void *
 
 // Call realloc inside the sandbox.
 void *
-{{.lib}}_realloc(size_t size);
+{{.lib}}_realloc(void *p, size_t size);
 
 // Call calloc inside the sandbox.
 void *
