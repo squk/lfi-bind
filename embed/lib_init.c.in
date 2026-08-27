@@ -91,28 +91,40 @@ void *
 {{.lib}}_stack_push(size_t size)
 {
     struct LFIRegs *regs = lfi_ctx_regs({{.lib}}_ctx);
-    regs->REG_SP = regs->REG_SP - size;
-    return (void *) lfi_box_l2p({{.lib}}_box, regs->REG_SP);
+    if (size > regs->REG_SP)
+        return NULL;
+    lfiptr sp = regs->REG_SP - size;
+    if (!lfi_box_bufvalid({{.lib}}_box, sp, size))
+        return NULL;
+    regs->REG_SP = sp;
+    return (void *) lfi_box_l2p({{.lib}}_box, sp);
 }
 
 void *
 {{.lib}}_stack_pop(size_t size)
 {
     struct LFIRegs *regs = lfi_ctx_regs({{.lib}}_ctx);
-    regs->REG_SP = regs->REG_SP + size;
-    return (void *) lfi_box_l2p({{.lib}}_box, regs->REG_SP);
+    lfiptr sp = regs->REG_SP + size;
+    if (sp < regs->REG_SP || !lfi_box_ptrvalid({{.lib}}_box, sp))
+        return NULL;
+    regs->REG_SP = sp;
+    return (void *) lfi_box_l2p({{.lib}}_box, sp);
 }
 
 void *
 {{.lib}}_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off)
 {
     struct LFIBox *box = {{.lib}}_box;
+    lfiptr p;
     if ((flags & LFI_MAP_FIXED) == 0) {
-        return (void *) lfi_box_l2p(box, lfi_box_mapany(box, length, prot, flags, fd, off));
+        p = lfi_box_mapany(box, length, prot, flags, fd, off);
     } else {
         lfiptr box_addr = lfi_box_p2l(box, (uintptr_t) addr);
-        return (void *) lfi_box_l2p(box, lfi_box_mapat(box, box_addr, length, prot, flags, fd, off));
+        p = lfi_box_mapat(box, box_addr, length, prot, flags, fd, off);
     }
+    if (p == (lfiptr) -1)
+        return MAP_FAILED;
+    return (void *) lfi_box_l2p(box, p);
 }
 
 int
@@ -134,8 +146,12 @@ static void
 resolve(struct LFILinuxProc *proc, lfiptr *loc, const char *name)
 {
     lfiptr addr = lfi_proc_sym(proc, name);
-    if (addr == 0)
+    if (addr == 0) {
         LOG("error: symbol not found: %s", name);
+    } else if (!lfi_box_ptrvalid(lfi_proc_box(proc), addr)) {
+        LOG("error: symbol out of sandbox bounds: %s", name);
+        addr = 0;
+    }
     *loc = addr;
 }
 {{end}}
@@ -279,6 +295,7 @@ bool
         LOG("error: failed to create LFI proc");
         return false;
     }
+    struct LFILinuxThread *t = NULL;
 
 {{if .embed}}
     bool ok = lfi_proc_load_remap(proc, embed_data, embed_size, library_file);
@@ -292,7 +309,7 @@ bool
     const char *prog_path = getfilepath(exe_file);
     if (!prog_path) {
         LOG("error: could not find %s", exe_file);
-        return false;
+        goto err;
     }
     bool ok = lfi_proc_load_file(proc, prog_path);
     free((void *) prog_path);
@@ -300,14 +317,18 @@ bool
 
     if (!ok) {
         LOG("error: failed to load LFI library");
-        return false;
+        goto err;
     }
 
     // Initialize return.
     lfiptr lfi_ret = lfi_proc_sym(proc, "_lfi_ret");
     if (!lfi_ret) {
         LOG("error: LFI library does not have _lfi_ret symbol");
-        return false;
+        goto err;
+    }
+    if (!lfi_box_ptrvalid(lfi_proc_box(proc), lfi_ret)) {
+        LOG("error: _lfi_ret symbol is out of sandbox bounds");
+        goto err;
     }
     lfi_box_register_ret(lfi_proc_box(proc), lfi_ret);
 
@@ -321,16 +342,16 @@ bool
         NULL,
     };
 
-    struct LFILinuxThread *t = lfi_thread_new(proc,
+    t = lfi_thread_new(proc,
         sizeof(argv)/sizeof(argv[0]) - 1, &argv[0], &envp[0]);
     if (!t) {
         LOG("failed to initialize LFI thread");
-        return false;
+        goto err;
     }
     int result = lfi_thread_run(t);
     if (result != 0) {
         LOG("LFI thread returned non-zero value: %d", result);
-        return false;
+        goto err;
     }
 
     // Initialize clone.
@@ -356,7 +377,7 @@ bool
     void *sbx_library_file = {{.lib}}_malloc(len);
     if (!sbx_library_file) {
         LOG("error: could not allocate library name in sandbox");
-        return false;
+        goto err;
     }
     memcpy(sbx_library_file, library_file, len);
 
@@ -366,32 +387,39 @@ bool
             sbx_library_file, LINUX_RTLD_NOW);
     if (!handle) {
         LOG("error: dlopen could not load %s", library_file);
-        return false;
+        goto err;
     }
     if (!lfi_box_ptrvalid(box, handle)) {
         LOG("error: dlopen returned invalid pointer");
-        return false;
+        goto err;
     }
     {{.lib}}_free(sbx_library_file);
 
     // Inject dlsym calls.
     lfiptr dlsym = lfi_proc_sym(proc, "_lfi_dlsym");
  {{- range $sym := .syms}}
-    size_t sym_len = sizeof("{{$sym}}");
-    void *sbx_sym = {{$.lib}}_malloc(sym_len);
-    if (!sbx_sym) {
-        LOG("error: could not allocate symbol name in sandbox");
-        return false;
-    }
-    memcpy(sbx_sym, "{{$sym}}", sym_len);
+    {
+        size_t sym_len = sizeof("{{$sym}}");
+        void *sbx_sym = {{$.lib}}_malloc(sym_len);
+        if (!sbx_sym) {
+            LOG("error: could not allocate symbol name in sandbox");
+            goto err;
+        }
+        memcpy(sbx_sym, "{{$sym}}", sym_len);
 
-    extern lfiptr {{$.lib}}_addr_{{$sym}};
-    lfiptr sym = LFI_INVOKE(box, lfi_thread_ctxp(t),
-            dlsym, lfiptr, (lfiptr, void *), handle, sbx_sym);
-    if (sym == 0)
-        LOG("error: symbol not found: {{$sym}}");
-    {{$.lib}}_addr_{{$sym}} = sym;
-    {{$.lib}}_free(sbx_sym);
+        extern lfiptr {{$.lib}}_addr_{{$sym}};
+        lfiptr sym = LFI_INVOKE(box, lfi_thread_ctxp(t),
+                dlsym, lfiptr, (lfiptr, void *), handle, sbx_sym);
+        if (sym == 0) {
+            LOG("error: symbol not found: {{$sym}}");
+        } else if (!lfi_box_ptrvalid(box, sym)) {
+            // dlsym runs in the sandbox; its result is untrusted.
+            LOG("error: symbol out of sandbox bounds: {{$sym}}");
+            sym = 0;
+        }
+        {{$.lib}}_addr_{{$sym}} = sym;
+        {{$.lib}}_free(sbx_sym);
+    }
  {{- end}}
 
 {{else}}
@@ -404,6 +432,14 @@ bool
 
 {{end}}
     return true;
+
+err:
+    {{.lib}}_box = NULL;
+    {{.lib}}_ctx = NULL;
+    if (t)
+        lfi_thread_free(t);
+    lfi_proc_free(proc);
+    return false;
 }
 
 {{if .constructor}}
@@ -425,7 +461,8 @@ void
 {{.lib}}_setjmp(jmp_buf env, void *lfi_env)
 {
     void *box_cb = {{.lib}}_register_cb(setjmp_callback);
-    assert(box_cb);
+    if (!box_cb)
+        ERROR("error: no callback slot available for setjmp");
     lfi_lib_setjmp({{.lib}}_box, &{{.lib}}_ctx, lfi_env, env, box_cb);
 }
 

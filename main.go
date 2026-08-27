@@ -6,12 +6,12 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	_ "embed"
 )
