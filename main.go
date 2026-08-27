@@ -138,19 +138,19 @@ func ExecTemplate(w io.Writer, name string, data string, vars map[string]any, fu
 }
 
 type Options struct {
-	Input       string
-	Syms        []string
-	Lib         string
-	LibPrefix   string
-	LibPath     string
-	Dynamic     bool
-	Embed       bool
-	NoVerify    bool
-	Constructor    bool
-	Verbose        bool
-	NoSigaltstack  bool
-	DirMaps     []string
-	StackArgs   map[string]StackArgInfo
+	Input         string
+	Syms          []string
+	Lib           string
+	LibPrefix     string
+	LibPath       string
+	Dynamic       bool
+	Embed         bool
+	NoVerify      bool
+	Constructor   bool
+	Verbose       bool
+	NoSigaltstack bool
+	DirMaps       []string
+	StackArgs     map[string]StackArgInfo
 }
 
 // Returns sret, nstack.
@@ -237,17 +237,17 @@ func GenInit(file string, opts Options) {
 	}
 
 	ExecTemplate(w, file, embedLibInitC, map[string]any{
-		"lib":         opts.Lib,
-		"lib_path":    opts.LibPath,
-		"syms":        opts.Syms,
-		"dynamic":     opts.Dynamic,
-		"no_verify":   opts.NoVerify,
-		"embed":       opts.Embed,
-		"embed_data":  embedData,
-		"constructor": opts.Constructor,
-		"verbose":         opts.Verbose,
-		"no_sigaltstack":  opts.NoSigaltstack,
-		"dir_maps":        opts.DirMaps,
+		"lib":            opts.Lib,
+		"lib_path":       opts.LibPath,
+		"syms":           opts.Syms,
+		"dynamic":        opts.Dynamic,
+		"no_verify":      opts.NoVerify,
+		"embed":          opts.Embed,
+		"embed_data":     embedData,
+		"constructor":    opts.Constructor,
+		"verbose":        opts.Verbose,
+		"no_sigaltstack": opts.NoSigaltstack,
+		"dir_maps":       opts.DirMaps,
 	}, nil)
 
 	w.Close()
@@ -367,19 +367,19 @@ func main() {
 	}
 
 	opts := Options{
-		Input:       input,
-		Syms:        syms,
-		Lib:         *lib,
-		LibPrefix:   *libPrefix,
-		LibPath:     *libPath,
-		Dynamic:     dynamic,
-		Embed:       *embedF,
-		NoVerify:    *noVerify,
-		Constructor: !*noConstructor,
+		Input:         input,
+		Syms:          syms,
+		Lib:           *lib,
+		LibPrefix:     *libPrefix,
+		LibPath:       *libPath,
+		Dynamic:       dynamic,
+		Embed:         *embedF,
+		NoVerify:      *noVerify,
+		Constructor:   !*noConstructor,
 		Verbose:       *verbose,
 		NoSigaltstack: *noSigaltstack,
-		DirMaps:     dirMapsSlice,
-		StackArgs:   stackArgs,
+		DirMaps:       dirMapsSlice,
+		StackArgs:     stackArgs,
 	}
 
 	if *genTrampolines != "" {
