@@ -46,7 +46,10 @@ _lfi_z_{{$sym}}:
 #elif defined(__x86_64__)
 
 .macro get_ctx var, reg
-#if defined(ENABLE_TLS_DESC)
+#if defined(ENABLE_TLS_EXEC)
+    movq %fs:0x0, \reg
+    addq \var@gottpoff(%rip), \reg
+#elif defined(ENABLE_TLS_DESC)
     pushq %rax
     leaq \var@TLSDESC(%rip), %rax
     callq *\var@TLSCALL(%rax)
